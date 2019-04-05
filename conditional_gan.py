@@ -78,13 +78,24 @@ class ConditionalGAN:
             json.dump(config, f)
         self.generator.save(f"{path}/g.h5")
         self.discriminator.save(f"{path}/d.h5")
+        self.save_summary(path)
+
+    def save_summary(self, path):
+        path = path.rstrip('/')
+        ensure_exists(path)
+        with open(f'{path}/summary.txt', 'w') as f:
+            def write_to_summary_file(text):
+                f.write(f"{text}\n")
+
+            self.combined.summary(print_fn=write_to_summary_file)
+        tf.keras.utils.plot_model(self.combined, to_file=f"{path}/model.png")
 
     def build_generator(self):
 
         noise_shape = (self.noise_size,)
 
         model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Dense(256, input_shape=np.add(noise_shape, (self.img_label_size,))))
+        model.add(tf.keras.layers.Dense(256, input_shape=noise_shape))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         model.add(tf.keras.layers.Dense(512))
@@ -115,7 +126,7 @@ class ConditionalGAN:
     def build_discriminator(self):
 
         model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Dense(512, input_shape=(np.prod(self.img_shape) + self.img_label_size,)))
+        model.add(tf.keras.layers.Dense(512, input_shape=(np.prod(self.img_shape),)))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.Dense(256))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
@@ -141,8 +152,8 @@ class ConditionalGAN:
 
     def build_combined(self):
         # Required compiled G and D
-        z = tf.keras.layers.Input(shape=(100,), name="noise")
-        img_label = tf.keras.layers.Input(shape=(self.img_label_size,), name="label")
+        z = tf.keras.layers.Input(shape=(self.noise_size,), name="noise")
+        img_label = tf.keras.layers.Input(shape=(1,), name="label")
         img = self.generator([z, img_label])
 
         # For the combined model we will only train the generator
@@ -181,7 +192,7 @@ class ConditionalGAN:
             labels = y[idx]
 
             # Generate a half batch of new images
-            noise = np.random.normal(0, 1, (half_batch, 100))
+            noise = np.random.normal(0, 1, (half_batch, self.noise_size))
             gen_imgs = self.generator.predict({"noise": noise, "label": labels})
 
             # Train the discriminator
@@ -199,7 +210,7 @@ class ConditionalGAN:
             valid_y = np.array([1] * batch_size)
 
             # Train the generator on random labels
-            noise = np.random.normal(0, 1, (batch_size, 100))
+            noise = np.random.normal(0, 1, (batch_size, self.noise_size))
             idx = np.random.randint(0, x.shape[0], batch_size)
             labels = y[idx]
 
@@ -213,13 +224,12 @@ class ConditionalGAN:
                 self.save_sample(epoch, sample_path)
 
     def save_sample(self, epoch, path):
-        r, c = 10, 5
-        noise = np.random.normal(0, 1, (r * c, 100))
+        r, c = self.img_label_size, 5
+        noise = np.random.normal(0, 1, (r * c, self.noise_size))
         labels = []
         for row in range(r):
             for col in range(c):
-                label = tf.keras.utils.to_categorical(row, num_classes=self.img_label_size)
-                labels.append(label)
+                labels.append(row)
         labels = np.array(labels)
         gen_imgs = self.generator.predict({"noise": noise, "label": labels})
 
@@ -249,9 +259,6 @@ if __name__ == '__main__':
     # add channel axis
     x_train = np.expand_dims(x_train, axis=3)
 
-    # Use one-hot encoding
-    y_train = tf.keras.utils.to_categorical(y_train)
-
     gan.train(x_train, y_train, epochs=30001, batch_size=32, save_interval=200,
-              sample_path="samples/conditional_mnist")
-    gan.save("models/conditional_mnist")
+              sample_path="samples/embedding_conditional_mnist")
+    gan.save("models/embedding_conditional_mnist")
