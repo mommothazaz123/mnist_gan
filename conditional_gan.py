@@ -10,20 +10,17 @@ import tensorflow as tf
 
 from utils import ensure_exists
 
-mnist = tf.keras.datasets.mnist
-
-
-# TODO add convolution
-# TODO add interactive "write me a number"
 
 class ConditionalGAN:
-    def __init__(self, img_rows, img_cols, img_channels, img_label_size, generator=None, discriminator=None):
+    def __init__(self, img_rows, img_cols, img_channels, img_label_size, noise_size, generator=None,
+                 discriminator=None):
         """
         A conditional GAN.
         :param img_rows: The number of rows of the image.
         :param img_cols: The number of cols of the image.
         :param img_channels: The number of channels of the image.
         :param img_label_size: The number of labels.
+        :param noise_size: The dimensionality of the noise.
         :param generator: A precompiled generator model. (Will create if not passed)
         :param discriminator: A precompiled discriminator model. (Will create if not passed)
         """
@@ -32,6 +29,7 @@ class ConditionalGAN:
         self.channels = img_channels
         self.img_label_size = img_label_size
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
+        self.noise_size = noise_size
 
         optimizer = tf.keras.optimizers.Adam(0.0002, 0.5)
 
@@ -62,8 +60,8 @@ class ConditionalGAN:
             config = json.load(f)
         generator = tf.keras.models.load_model(f"{path}/g.h5")
         discriminator = tf.keras.models.load_model(f"{path}/d.h5")
-        return cls(config['rows'], config['cols'], config['chans'], config['labels'], generator=generator,
-                   discriminator=discriminator)
+        return cls(config['rows'], config['cols'], config['chans'], config['labels'], config['noise_size'],
+                   generator=generator, discriminator=discriminator)
 
     def save(self, path):
         """Saves the GAN to a folder."""
@@ -73,7 +71,8 @@ class ConditionalGAN:
             "rows": self.img_rows,
             "cols": self.img_cols,
             "chans": self.channels,
-            "labels": self.img_label_size
+            "labels": self.img_label_size,
+            "noise_size": self.noise_size
         }
         with open(f"{path}/config.json", 'w') as f:
             json.dump(config, f)
@@ -82,7 +81,7 @@ class ConditionalGAN:
 
     def build_generator(self):
 
-        noise_shape = (100,)
+        noise_shape = (self.noise_size,)
 
         model = tf.keras.models.Sequential()
         model.add(tf.keras.layers.Dense(256, input_shape=np.add(noise_shape, (self.img_label_size,))))
@@ -99,8 +98,16 @@ class ConditionalGAN:
         model.summary()
 
         noise = tf.keras.layers.Input(shape=noise_shape, name="noise")
-        img_label = tf.keras.layers.Input(shape=(self.img_label_size,), name="label")
-        augmented_noise = tf.keras.layers.Concatenate()([noise, img_label])
+        img_label = tf.keras.layers.Input(shape=(1,), dtype="int32", name="label")
+
+        # img_label = tf.keras.layers.Input(shape=(self.img_label_size,), name="label")
+        # augmented_noise = tf.keras.layers.Concatenate()([noise, img_label])
+
+        # incorporate label by multiplying noise data by embedding
+        label_embedding = tf.keras.layers.Embedding(self.img_label_size, self.noise_size)(img_label)
+        label_embedding = tf.keras.layers.Flatten()(label_embedding)
+        augmented_noise = tf.keras.layers.Multiply()([noise, label_embedding])
+
         img = model(augmented_noise)
 
         return tf.keras.models.Model(inputs=[noise, img_label], outputs=img)
@@ -116,9 +123,17 @@ class ConditionalGAN:
         model.summary()
 
         img = tf.keras.layers.Input(shape=self.img_shape, name="image")
+        img_label = tf.keras.layers.Input(shape=(1,), dtype="int32", name="label")
+
+        # flat_img = tf.keras.layers.Flatten(input_shape=self.img_shape)(img)
+        # img_label = tf.keras.layers.Input(shape=(self.img_label_size,), name="label")
+        # augmented_img = tf.keras.layers.Concatenate()([flat_img, img_label])
+
+        # incorporate label by multiplying image data by embedding
+        label_embedding = tf.keras.layers.Embedding(self.img_label_size, np.prod(self.img_shape))(img_label)
         flat_img = tf.keras.layers.Flatten(input_shape=self.img_shape)(img)
-        img_label = tf.keras.layers.Input(shape=(self.img_label_size,), name="label")
-        augmented_img = tf.keras.layers.Concatenate()([flat_img, img_label])
+        label_embedding = tf.keras.layers.Flatten()(label_embedding)
+        augmented_img = tf.keras.layers.Multiply()([flat_img, label_embedding])
 
         validity = model(augmented_img)
 
@@ -223,17 +238,20 @@ class ConditionalGAN:
 
 
 if __name__ == '__main__':
-    gan = ConditionalGAN(28, 28, 1, 10)
+    gan = ConditionalGAN(img_rows=28, img_cols=28, img_channels=1, img_label_size=10, noise_size=100)
 
     # Load MNIST number dataset
+    mnist = tf.keras.datasets.mnist
     (x_train, y_train), (_, _) = mnist.load_data()
 
     # Rescale -1 to 1
     x_train = (x_train.astype(np.float32) - 127.5) / 127.5
+    # add channel axis
     x_train = np.expand_dims(x_train, axis=3)
 
     # Use one-hot encoding
     y_train = tf.keras.utils.to_categorical(y_train)
 
-    gan.train(x_train, y_train, epochs=30001, batch_size=32, save_interval=200, sample_path="samples/conditional_mnist")
+    gan.train(x_train, y_train, epochs=30001, batch_size=32, save_interval=200,
+              sample_path="samples/conditional_mnist")
     gan.save("models/conditional_mnist")
