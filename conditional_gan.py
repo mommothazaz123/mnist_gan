@@ -1,17 +1,32 @@
 """
-Modified MNIST GAN, based on basic GAN found at
+Modified GAN, based on basic GAN found at
 https://github.com/eriklindernoren/Keras-GAN
 """
+import json
 
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
+from utils import ensure_exists
+
 mnist = tf.keras.datasets.mnist
 
 
-class GAN:
-    def __init__(self, img_rows, img_cols, img_channels, img_label_size):
+# TODO add convolution
+# TODO add interactive "write me a number"
+
+class ConditionalGAN:
+    def __init__(self, img_rows, img_cols, img_channels, img_label_size, generator=None, discriminator=None):
+        """
+        A conditional GAN.
+        :param img_rows: The number of rows of the image.
+        :param img_cols: The number of cols of the image.
+        :param img_channels: The number of channels of the image.
+        :param img_label_size: The number of labels.
+        :param generator: A precompiled generator model. (Will create if not passed)
+        :param discriminator: A precompiled discriminator model. (Will create if not passed)
+        """
         self.img_rows = img_rows
         self.img_cols = img_cols
         self.channels = img_channels
@@ -20,34 +35,50 @@ class GAN:
 
         optimizer = tf.keras.optimizers.Adam(0.0002, 0.5)
 
-        # Build and compile the discriminator
-        self.discriminator = self.build_discriminator()
-        self.discriminator.compile(loss='binary_crossentropy',
-                                   optimizer=optimizer,
-                                   metrics=['accuracy'])
+        if discriminator is None:
+            # Build and compile the discriminator
+            self.discriminator = self.build_discriminator()
+            self.discriminator.compile(loss='binary_crossentropy',
+                                       optimizer=optimizer,
+                                       metrics=['accuracy'])
+        else:
+            self.discriminator = discriminator  # load model from saved
 
-        # Build and compile the generator
-        self.generator = self.build_generator()
-        self.generator.compile(loss='binary_crossentropy', optimizer=optimizer)
+        if generator is None:
+            # Build and compile the generator
+            self.generator = self.build_generator()
+            self.generator.compile(loss='binary_crossentropy', optimizer=optimizer)
+        else:
+            self.generator = generator
 
-        # The generator takes noise as input and generated imgs
-        z = tf.keras.layers.Input(shape=(100,), name="noise")
-        img_label = tf.keras.layers.Input(shape=(self.img_label_size,), name="label")
-        # augmented_noise = tf.keras.layers.Concatenate()([z, img_label])
-        img = self.generator([z, img_label])
-
-        # For the combined model we will only train the generator
-        self.discriminator.trainable = False
-
-        # The valid takes generated images as input and determines validity
-        # img = tf.keras.layers.Flatten(input_shape=self.img_shape)(img)
-        # augmented_img = tf.keras.layers.Concatenate()([img, img_label])
-        valid = self.discriminator([img, img_label])
-
-        # The combined model  (stacked generator and discriminator) takes
-        # noise as input => generates images => determines validity
-        self.combined = tf.keras.models.Model([z, img_label], valid)
+        # Build and compile the combined model
+        self.combined = self.build_combined()
         self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
+
+    @classmethod
+    def load(cls, path):
+        path = path.rstrip('/')
+        with open(f"{path}/config.json") as f:
+            config = json.load(f)
+        generator = tf.keras.models.load_model(f"{path}/g.h5")
+        discriminator = tf.keras.models.load_model(f"{path}/d.h5")
+        return cls(config['rows'], config['cols'], config['chans'], config['labels'], generator=generator,
+                   discriminator=discriminator)
+
+    def save(self, path):
+        """Saves the GAN to a folder."""
+        path = path.rstrip('/')
+        ensure_exists(path)
+        config = {
+            "rows": self.img_rows,
+            "cols": self.img_cols,
+            "chans": self.channels,
+            "labels": self.img_label_size
+        }
+        with open(f"{path}/config.json", 'w') as f:
+            json.dump(config, f)
+        self.generator.save(f"{path}/g.h5")
+        self.discriminator.save(f"{path}/d.h5")
 
     def build_generator(self):
 
@@ -93,17 +124,33 @@ class GAN:
 
         return tf.keras.models.Model(inputs=[img, img_label], outputs=[validity])
 
-    def train(self, epochs, batch_size=128, save_interval=50):
+    def build_combined(self):
+        # Required compiled G and D
+        z = tf.keras.layers.Input(shape=(100,), name="noise")
+        img_label = tf.keras.layers.Input(shape=(self.img_label_size,), name="label")
+        img = self.generator([z, img_label])
 
-        # Load the dataset
-        (x_train, y_train), (_, _) = mnist.load_data()
+        # For the combined model we will only train the generator
+        self.discriminator.trainable = False
 
-        # Rescale -1 to 1
-        x_train = (x_train.astype(np.float32) - 127.5) / 127.5
-        x_train = np.expand_dims(x_train, axis=3)
+        # The valid takes generated images as input and determines validity
+        valid = self.discriminator([img, img_label])
 
-        # Use one-hot encoding
-        y_train = tf.keras.utils.to_categorical(y_train)
+        # The combined model  (stacked generator and discriminator) takes
+        # noise as input => generates images => determines validity
+        return tf.keras.models.Model(inputs=[z, img_label], outputs=valid)
+
+    def train(self, x, y, epochs, batch_size=128, save_interval=50, sample_path="gan/conditional"):
+        """
+        Trains the GAN.
+        :param x: The training data.
+        :param y: The labels for the training data.
+        :param epochs: The number of epochs to train.
+        :param batch_size: The size of an epoch.
+        :param save_interval: How often to save sample images.
+        :param sample_path: Where to save sample images.
+        """
+        ensure_exists(sample_path)
 
         half_batch = int(batch_size / 2)
 
@@ -114,9 +161,9 @@ class GAN:
             # ---------------------
 
             # Select a random half batch of images
-            idx = np.random.randint(0, x_train.shape[0], half_batch)
-            imgs = x_train[idx]
-            labels = y_train[idx]
+            idx = np.random.randint(0, x.shape[0], half_batch)
+            imgs = x[idx]
+            labels = y[idx]
 
             # Generate a half batch of new images
             noise = np.random.normal(0, 1, (half_batch, 100))
@@ -138,8 +185,8 @@ class GAN:
 
             # Train the generator on random labels
             noise = np.random.normal(0, 1, (batch_size, 100))
-            idx = np.random.randint(0, x_train.shape[0], batch_size)
-            labels = y_train[idx]
+            idx = np.random.randint(0, x.shape[0], batch_size)
+            labels = y[idx]
 
             g_loss = self.combined.train_on_batch({"noise": noise, "label": labels}, valid_y)
 
@@ -148,9 +195,9 @@ class GAN:
 
             # If at save interval => save generated image samples
             if epoch % save_interval == 0:
-                self.save_imgs(epoch)
+                self.save_sample(epoch, sample_path)
 
-    def save_imgs(self, epoch):
+    def save_sample(self, epoch, path):
         r, c = 10, 5
         noise = np.random.normal(0, 1, (r * c, 100))
         labels = []
@@ -171,10 +218,22 @@ class GAN:
                 axs[i, j].imshow(gen_imgs[cnt, :, :, 0], cmap='gray')
                 axs[i, j].axis('off')
                 cnt += 1
-        fig.savefig("gan/conditional/mnist_%d.png" % epoch)
+        fig.savefig(f"{path}/%d.png" % epoch)
         plt.close()
 
 
 if __name__ == '__main__':
-    gan = GAN(28, 28, 1, 10)
-    gan.train(epochs=30000, batch_size=32, save_interval=200)
+    gan = ConditionalGAN(28, 28, 1, 10)
+
+    # Load MNIST number dataset
+    (x_train, y_train), (_, _) = mnist.load_data()
+
+    # Rescale -1 to 1
+    x_train = (x_train.astype(np.float32) - 127.5) / 127.5
+    x_train = np.expand_dims(x_train, axis=3)
+
+    # Use one-hot encoding
+    y_train = tf.keras.utils.to_categorical(y_train)
+
+    gan.train(x_train, y_train, epochs=30001, batch_size=32, save_interval=200, sample_path="samples/conditional_mnist")
+    gan.save("models/conditional_mnist")
