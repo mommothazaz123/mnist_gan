@@ -87,8 +87,10 @@ class ConditionalGAN:
             def write_to_summary_file(text):
                 f.write(f"{text}\n")
 
+            self.generator.summary(print_fn=write_to_summary_file)
+            self.discriminator.summary(print_fn=write_to_summary_file)
             self.combined.summary(print_fn=write_to_summary_file)
-        tf.keras.utils.plot_model(self.combined, to_file=f"{path}/model.png")
+        tf.keras.utils.plot_model(self.combined, to_file=f"{path}/model.png", expand_nested=True)
 
     def build_generator(self):
 
