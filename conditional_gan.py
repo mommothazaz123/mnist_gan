@@ -2,16 +2,16 @@
 Modified GAN, based on basic GAN found at
 https://github.com/eriklindernoren/Keras-GAN
 """
-import json
 
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
+from ganbase import GANBase
 from utils import ensure_exists
 
 
-class ConditionalGAN:
+class ConditionalGAN(GANBase):
     def __init__(self, img_rows, img_cols, img_channels, img_label_size, noise_size, generator=None,
                  discriminator=None):
         """
@@ -24,73 +24,8 @@ class ConditionalGAN:
         :param generator: A precompiled generator model. (Will create if not passed)
         :param discriminator: A precompiled discriminator model. (Will create if not passed)
         """
-        self.img_rows = img_rows
-        self.img_cols = img_cols
-        self.channels = img_channels
-        self.img_label_size = img_label_size
-        self.img_shape = (self.img_rows, self.img_cols, self.channels)
-        self.noise_size = noise_size
-
-        optimizer = tf.keras.optimizers.Adam(0.0002, 0.5)
-
-        if discriminator is None:
-            # Build and compile the discriminator
-            self.discriminator = self.build_discriminator()
-            self.discriminator.compile(loss='binary_crossentropy',
-                                       optimizer=optimizer,
-                                       metrics=['accuracy'])
-        else:
-            self.discriminator = discriminator  # load model from saved
-
-        if generator is None:
-            # Build and compile the generator
-            self.generator = self.build_generator()
-            self.generator.compile(loss='binary_crossentropy', optimizer=optimizer)
-        else:
-            self.generator = generator
-
-        # Build and compile the combined model
-        self.combined = self.build_combined()
-        self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
-
-    @classmethod
-    def load(cls, path):
-        path = path.rstrip('/')
-        with open(f"{path}/config.json") as f:
-            config = json.load(f)
-        generator = tf.keras.models.load_model(f"{path}/g.h5")
-        discriminator = tf.keras.models.load_model(f"{path}/d.h5")
-        return cls(config['rows'], config['cols'], config['chans'], config['labels'], config['noise_size'],
-                   generator=generator, discriminator=discriminator)
-
-    def save(self, path):
-        """Saves the GAN to a folder."""
-        path = path.rstrip('/')
-        ensure_exists(path)
-        config = {
-            "rows": self.img_rows,
-            "cols": self.img_cols,
-            "chans": self.channels,
-            "labels": self.img_label_size,
-            "noise_size": self.noise_size
-        }
-        with open(f"{path}/config.json", 'w') as f:
-            json.dump(config, f)
-        self.generator.save(f"{path}/g.h5")
-        self.discriminator.save(f"{path}/d.h5")
-        self.save_summary(path)
-
-    def save_summary(self, path):
-        path = path.rstrip('/')
-        ensure_exists(path)
-        with open(f'{path}/summary.txt', 'w') as f:
-            def write_to_summary_file(text):
-                f.write(f"{text}\n")
-
-            self.generator.summary(print_fn=write_to_summary_file)
-            self.discriminator.summary(print_fn=write_to_summary_file)
-            self.combined.summary(print_fn=write_to_summary_file)
-        tf.keras.utils.plot_model(self.combined, to_file=f"{path}/model.png", expand_nested=True)
+        super(ConditionalGAN, self).__init__(img_rows, img_cols, img_channels, img_label_size, noise_size, generator,
+                                             discriminator)
 
     def build_generator(self):
 
@@ -168,7 +103,7 @@ class ConditionalGAN:
         # noise as input => generates images => determines validity
         return tf.keras.models.Model(inputs=[z, img_label], outputs=valid)
 
-    def train(self, x, y, epochs, batch_size=128, save_interval=50, sample_path="gan/conditional"):
+    def train(self, x, y, epochs, batch_size=128, save_interval=50, sample_path="samples/conditional_gan"):
         """
         Trains the GAN.
         :param x: The training data.
@@ -222,7 +157,7 @@ class ConditionalGAN:
             print("%d [D loss: %f, acc.: %.2f%%] [G loss: %f]" % (epoch, d_loss[0], 100 * d_loss[1], g_loss))
 
             # If at save interval => save generated image samples
-            if epoch % save_interval == 0:
+            if save_interval and epoch % save_interval == 0:
                 self.save_sample(epoch, sample_path)
 
     def save_sample(self, epoch, path):
@@ -262,5 +197,5 @@ if __name__ == '__main__':
     x_train = np.expand_dims(x_train, axis=3)
 
     gan.train(x_train, y_train, epochs=30001, batch_size=32, save_interval=200,
-              sample_path="samples/embedding_conditional_mnist")
-    gan.save("models/embedding_conditional_mnist")
+              sample_path="samples/conditional_mnist")
+    gan.save("models/conditional_mnist")
