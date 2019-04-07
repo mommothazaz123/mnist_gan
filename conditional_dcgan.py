@@ -233,13 +233,14 @@ class CDCGAN(GANBase):
         gen_imgs = 0.5 * gen_imgs + 0.5
 
         fig, axs = plt.subplots(r, c)
+        fig.subplots_adjust(left=0.03, right=0.97, hspace=0.3, wspace=0.05)
         cnt = 0
         for i in range(r):
             for j in range(c):
                 axs[i, j].imshow(gen_imgs[cnt, :, :, :])  # , cmap='gray')  (if grayscale)
                 axs[i, j].axis('off')
                 cnt += 1
-        fig.savefig(f"{path}/{epoch}.png", dpi='figure')
+        fig.savefig(f"{path}/{epoch}.png", dpi=300)
         plt.close()
 
 
