@@ -79,27 +79,32 @@ class CDCGAN(GANBase):
         # (None, 14, 14, 32)
 
         model.add(tf.keras.layers.Conv2D(64, kernel_size=3, padding="same"))
-        model.add(tf.keras.layers.MaxPool2D())
         # model.add(tf.keras.layers.ZeroPadding2D(padding=((0, 1), (0, 1))))  # used in mnist
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.MaxPool2D())
         model.add(tf.keras.layers.Dropout(0.25))
         # (None, 8, 8, 64)
 
         model.add(tf.keras.layers.Conv2D(128, kernel_size=3, padding="same"))
-        model.add(tf.keras.layers.MaxPool2D())
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.MaxPool2D())
         model.add(tf.keras.layers.Dropout(0.25))
         # (None, 4, 4, 128)
 
         model.add(tf.keras.layers.Conv2D(256, kernel_size=3, strides=1, padding="same"))
-        model.add(tf.keras.layers.MaxPool2D())
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.MaxPool2D())
         model.add(tf.keras.layers.Dropout(0.25))
         # (None, 4, 4, 256)
         model.add(tf.keras.layers.Flatten())
+
+        # small FCN at end of convolution
+        model.add(tf.keras.layers.Dense(32))
+        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.Dropout(0.25))
 
         model.add(tf.keras.layers.Dense(16))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
