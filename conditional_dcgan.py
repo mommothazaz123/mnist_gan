@@ -27,33 +27,35 @@ class CDCGAN(GANBase):
         noise_shape = (self.noise_size,)
 
         model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Dense(3 * 3 * 256, input_shape=noise_shape))
-        model.add(tf.keras.layers.Reshape((3, 3, 256)))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        # (None, 3, 3, 256)
-
-        model.add(tf.keras.layers.Conv2DTranspose(128, kernel_size=3, padding='same', activation='relu'))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        # (None, 3, 3, 128)
-
-        model.add(tf.keras.layers.UpSampling2D((2, 2)))
-        model.add(tf.keras.layers.ZeroPadding2D(padding=((0, 1), (0, 1))))
-        model.add(tf.keras.layers.Conv2DTranspose(64, kernel_size=3, padding='same', activation='relu'))
+        model.add(tf.keras.layers.Dense(7 * 7 * 64, input_shape=noise_shape))
+        model.add(tf.keras.layers.Reshape((7, 7, 64)))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         # (None, 7, 7, 64)
 
-        model.add(tf.keras.layers.UpSampling2D((2, 2)))
-        model.add(tf.keras.layers.Conv2DTranspose(32, kernel_size=3, padding='same', activation='relu'))
+        model.add(tf.keras.layers.Conv2D(32, kernel_size=3, padding='same', activation='relu'))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        # (None, 14, 14, 32)
+        # (None, 7, 7, 32)
 
         model.add(tf.keras.layers.UpSampling2D((2, 2)))
-        model.add(tf.keras.layers.Conv2DTranspose(self.channels, kernel_size=3, padding='same', activation='tanh'))
+        model.add(tf.keras.layers.Conv2D(16, kernel_size=3, padding='same', activation='relu'))
+        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
+        # (None, 14, 14, 16)
+
+        model.add(tf.keras.layers.UpSampling2D((2, 2)))
+        model.add(tf.keras.layers.Conv2D(16, kernel_size=3, padding='same', activation='relu'))
+        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
+        # (None, 28, 28, 16)
+
+        # model.add(tf.keras.layers.Conv2D(self.channels, kernel_size=3, padding='same', activation='relu'))
+        # model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        # model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         # (None, 28, 28, 1)
+
+        model.add(tf.keras.layers.Dense(self.channels, activation='tanh'))
         model.summary()
 
         noise = tf.keras.layers.Input(shape=noise_shape, name="noise")
