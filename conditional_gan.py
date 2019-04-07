@@ -103,14 +103,14 @@ class ConditionalGAN(GANBase):
         # noise as input => generates images => determines validity
         return tf.keras.models.Model(inputs=[z, img_label], outputs=valid)
 
-    def train(self, x, y, epochs, batch_size=128, save_interval=50, sample_path="samples/conditional_gan"):
+    def train(self, x, y, epochs, batch_size=128, sample_interval=50, sample_path="samples/unknown"):
         """
         Trains the GAN.
         :param x: The training data.
         :param y: The labels for the training data.
         :param epochs: The number of epochs to train.
         :param batch_size: The size of an epoch.
-        :param save_interval: How often to save sample images.
+        :param sample_interval: How often to save sample images.
         :param sample_path: Where to save sample images.
         """
         ensure_exists(sample_path)
@@ -157,7 +157,7 @@ class ConditionalGAN(GANBase):
             print("%d [D loss: %f, acc.: %.2f%%] [G loss: %f]" % (epoch, d_loss[0], 100 * d_loss[1], g_loss))
 
             # If at save interval => save generated image samples
-            if save_interval and epoch % save_interval == 0:
+            if sample_interval and epoch % sample_interval == 0:
                 self.save_sample(epoch, sample_path)
 
     def save_sample(self, epoch, path):
@@ -196,6 +196,5 @@ if __name__ == '__main__':
     # add channel axis
     x_train = np.expand_dims(x_train, axis=3)
 
-    gan.train(x_train, y_train, epochs=30001, batch_size=32, save_interval=200,
-              sample_path="samples/conditional_mnist")
+    gan.train(x_train, y_train, epochs=30001, batch_size=32, sample_interval=200, sample_path="samples/conditional_mnist")
     gan.save("models/conditional_mnist")

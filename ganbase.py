@@ -101,7 +101,7 @@ class GANBase:
         """To be overriden in subclasses"""
         raise NotImplemented()
 
-    def train(self, x, y, epochs, batch_size=128, save_interval=50, sample_path="samples/unknown"):
+    def train(self, x, y, epochs, batch_size=128, sample_interval=50, sample_path="samples/unknown"):
         """To be overriden in subclasses"""
         raise NotImplemented()
 
