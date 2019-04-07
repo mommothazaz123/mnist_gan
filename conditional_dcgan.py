@@ -27,28 +27,28 @@ class CDCGAN(GANBase):
         noise_shape = (self.noise_size,)
 
         model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Dense(7 * 7 * 64, input_shape=noise_shape))
-        model.add(tf.keras.layers.Reshape((7, 7, 64)))
+        model.add(tf.keras.layers.Dense(8 * 8 * 64, input_shape=noise_shape))
+        model.add(tf.keras.layers.Reshape((8, 8, 64)))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        # (None, 7, 7, 64)
+        # (None, 8, 8, 64)
 
-        model.add(tf.keras.layers.Conv2D(32, kernel_size=3, padding='same', activation='relu'))
+        model.add(tf.keras.layers.Conv2D(32, kernel_size=3, padding='same'))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        # (None, 7, 7, 32)
-
-        model.add(tf.keras.layers.UpSampling2D((2, 2)))
-        model.add(tf.keras.layers.Conv2D(16, kernel_size=3, padding='same', activation='relu'))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        # (None, 14, 14, 16)
+        # (None, 8, 8, 32)
 
         model.add(tf.keras.layers.UpSampling2D((2, 2)))
-        model.add(tf.keras.layers.Conv2D(16, kernel_size=3, padding='same', activation='relu'))
+        model.add(tf.keras.layers.Conv2D(16, kernel_size=3, padding='same'))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        # (None, 28, 28, 16)
+        # (None, 16, 16, 16)
+
+        model.add(tf.keras.layers.UpSampling2D((2, 2)))
+        model.add(tf.keras.layers.Conv2D(16, kernel_size=3, padding='same'))
+        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
+        # (None, 32, 32, 16)
 
         # model.add(tf.keras.layers.Conv2D(self.channels, kernel_size=3, padding='same', activation='relu'))
         # model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
@@ -73,29 +73,37 @@ class CDCGAN(GANBase):
     def build_discriminator(self):
         # Use convolutional network to improve discriminator
         model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Conv2D(32, kernel_size=3, strides=2, input_shape=self.img_shape, padding='same'))
+        model.add(tf.keras.layers.Conv2D(32, kernel_size=3, input_shape=self.img_shape, padding='same'))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.MaxPool2D())
         # (None, 14, 14, 32)
 
-        model.add(tf.keras.layers.Conv2D(64, kernel_size=3, strides=2, padding="same"))
-        model.add(tf.keras.layers.ZeroPadding2D(padding=((0, 1), (0, 1))))
+        model.add(tf.keras.layers.Conv2D(64, kernel_size=3, padding="same"))
+        model.add(tf.keras.layers.MaxPool2D())
+        # model.add(tf.keras.layers.ZeroPadding2D(padding=((0, 1), (0, 1))))  # used in mnist
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.Dropout(0.25))
         # (None, 8, 8, 64)
 
-        model.add(tf.keras.layers.Conv2D(128, kernel_size=3, strides=2, padding="same"))
+        model.add(tf.keras.layers.Conv2D(128, kernel_size=3, padding="same"))
+        model.add(tf.keras.layers.MaxPool2D())
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.Dropout(0.25))
         # (None, 4, 4, 128)
 
         model.add(tf.keras.layers.Conv2D(256, kernel_size=3, strides=1, padding="same"))
+        model.add(tf.keras.layers.MaxPool2D())
         model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
         model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
         model.add(tf.keras.layers.Dropout(0.25))
         # (None, 4, 4, 256)
         model.add(tf.keras.layers.Flatten())
+
+        model.add(tf.keras.layers.Dense(16))
+        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
+        model.add(tf.keras.layers.Dropout(0.25))
 
         # output
         model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
@@ -131,7 +139,8 @@ class CDCGAN(GANBase):
         # noise as input => generates images => determines validity
         return tf.keras.models.Model(inputs=[z, img_label], outputs=valid)
 
-    def train(self, x, y, epochs, batch_size=128, save_interval=50, sample_path="samples/conditional_dcgan"):
+    def train(self, x, y, epochs, batch_size=128, save_interval=50, sample_path="samples/conditional_dcgan",
+              starting_epoch=0):
         """
         Trains the GAN.
         :param x: The training data.
@@ -146,6 +155,7 @@ class CDCGAN(GANBase):
         half_batch = int(batch_size / 2)
 
         for epoch in range(epochs):
+            epoch += starting_epoch
 
             # ---------------------
             #  Train Discriminator
@@ -205,7 +215,7 @@ class CDCGAN(GANBase):
         cnt = 0
         for i in range(r):
             for j in range(c):
-                axs[i, j].imshow(gen_imgs[cnt, :, :, 0], cmap='gray')
+                axs[i, j].imshow(gen_imgs[cnt, :, :, :])  # , cmap='gray')  (if grayscale)
                 axs[i, j].axis('off')
                 cnt += 1
         fig.savefig(f"{path}/%d.png" % epoch)
@@ -213,17 +223,30 @@ class CDCGAN(GANBase):
 
 
 if __name__ == '__main__':
-    gan = CDCGAN(img_rows=28, img_cols=28, img_channels=1, img_label_size=10, noise_size=100)
+    # gan = CDCGAN(img_rows=28, img_cols=28, img_channels=1, img_label_size=10, noise_size=100)
+    #
+    # # Load MNIST number dataset
+    # mnist = tf.keras.datasets.mnist
+    # (x_train, y_train), (_, _) = mnist.load_data()
+    #
+    # # Rescale -1 to 1
+    # x_train = (x_train.astype(np.float32) - 127.5) / 127.5
+    # # add channel axis
+    # x_train = np.expand_dims(x_train, axis=3)
+    #
+    # gan.train(x_train, y_train, epochs=10001, batch_size=32, save_interval=200,
+    #           sample_path="samples/conditional_dcgan_upsampling_mnist")
+    # gan.save("models/conditional_dcgan_upsampling_mnist")
+
+    gan = CDCGAN(img_rows=32, img_cols=32, img_channels=3, img_label_size=10, noise_size=100)
 
     # Load MNIST number dataset
-    mnist = tf.keras.datasets.mnist
-    (x_train, y_train), (_, _) = mnist.load_data()
+    data = tf.keras.datasets.cifar10
+    (x_train, y_train), (_, _) = data.load_data()
 
     # Rescale -1 to 1
     x_train = (x_train.astype(np.float32) - 127.5) / 127.5
-    # add channel axis
-    x_train = np.expand_dims(x_train, axis=3)
 
-    gan.train(x_train, y_train, epochs=10001, batch_size=32, save_interval=200,
-              sample_path="samples/conditional_dcgan_upsampling_mnist")
-    gan.save("models/conditional_dcgan_upsampling_mnist")
+    gan.train(x_train, y_train, epochs=100001, batch_size=32, save_interval=500,
+              sample_path="samples/conditional_dcgan_cifar10", starting_epoch=10000)
+    gan.save("models/conditional_dcgan_cifar10")
