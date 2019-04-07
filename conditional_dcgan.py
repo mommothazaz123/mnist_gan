@@ -139,15 +139,15 @@ class CDCGAN(GANBase):
         # noise as input => generates images => determines validity
         return tf.keras.models.Model(inputs=[z, img_label], outputs=valid)
 
-    def train(self, x, y, epochs, batch_size=128, save_interval=50, sample_path="samples/conditional_dcgan",
-              starting_epoch=0):
+    def train(self, x, y, epochs, batch_size=128, sample_interval=50, sample_path="samples/unknown", starting_epoch=0,
+              save_interval=5000):
         """
         Trains the GAN.
         :param x: The training data.
         :param y: The labels for the training data.
         :param epochs: The number of epochs to train.
         :param batch_size: The size of an epoch.
-        :param save_interval: How often to save sample images.
+        :param sample_interval: How often to save sample images.
         :param sample_path: Where to save sample images.
         """
         ensure_exists(sample_path)
@@ -195,8 +195,12 @@ class CDCGAN(GANBase):
             print("%d [D loss: %f, acc.: %.2f%%] [G loss: %f]" % (epoch, d_loss[0], 100 * d_loss[1], g_loss))
 
             # If at save interval => save generated image samples
-            if epoch % save_interval == 0:
+            if epoch % sample_interval == 0:
                 self.save_sample(epoch, sample_path)
+
+            # save model
+            if epoch % save_interval == 0:
+                self.save(f"temp/{epoch}")
 
     def save_sample(self, epoch, path):
         r, c = self.img_label_size, 5
@@ -218,7 +222,7 @@ class CDCGAN(GANBase):
                 axs[i, j].imshow(gen_imgs[cnt, :, :, :])  # , cmap='gray')  (if grayscale)
                 axs[i, j].axis('off')
                 cnt += 1
-        fig.savefig(f"{path}/%d.png" % epoch)
+        fig.savefig(f"{path}/{epoch}.png")
         plt.close()
 
 
@@ -247,6 +251,6 @@ if __name__ == '__main__':
     # Rescale -1 to 1
     x_train = (x_train.astype(np.float32) - 127.5) / 127.5
 
-    gan.train(x_train, y_train, epochs=100001, batch_size=32, save_interval=500,
-              sample_path="samples/conditional_dcgan_cifar10", starting_epoch=10000)
+    gan.train(x_train, y_train, epochs=100001, batch_size=32, sample_interval=500,
+              sample_path="samples/conditional_dcgan_cifar10", save_interval=5000)
     gan.save("models/conditional_dcgan_cifar10")
