@@ -6,6 +6,10 @@ from ganbase import GANBase
 from utils import ensure_exists
 
 
+# TODO look at implementing Wasserstein loss?
+# minibatch discrimination
+# https://medium.com/@utk.is.here/training-a-conditional-dc-gan-on-cifar-10-fce88395d610
+
 class CDCGAN(GANBase):
     def __init__(self, img_rows, img_cols, img_channels, img_label_size, noise_size, generator=None,
                  discriminator=None):
@@ -71,62 +75,58 @@ class CDCGAN(GANBase):
         return tf.keras.models.Model(inputs=[noise, img_label], outputs=img)
 
     def build_discriminator(self):
+        img = tf.keras.layers.Input(shape=self.img_shape, name="image")
+
         # Use convolutional network to improve discriminator
-        model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Conv2D(32, kernel_size=3, input_shape=self.img_shape, padding='same'))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.MaxPool2D())
+        hid = tf.keras.layers.Conv2D(32, kernel_size=3, input_shape=self.img_shape, padding='same')(img)
+        hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
+        hid = tf.keras.layers.MaxPool2D()(hid)
         # (None, 14, 14, 32)
 
-        model.add(tf.keras.layers.Conv2D(64, kernel_size=3, padding="same"))
+        hid = tf.keras.layers.Conv2D(64, kernel_size=3, padding="same")(hid)
         # model.add(tf.keras.layers.ZeroPadding2D(padding=((0, 1), (0, 1))))  # used in mnist
-        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.MaxPool2D())
-        model.add(tf.keras.layers.Dropout(0.25))
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
+        hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
+        hid = tf.keras.layers.MaxPool2D()(hid)
+        hid = tf.keras.layers.Dropout(0.25)(hid)
         # (None, 8, 8, 64)
 
-        model.add(tf.keras.layers.Conv2D(128, kernel_size=3, padding="same"))
-        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.MaxPool2D())
-        model.add(tf.keras.layers.Dropout(0.25))
+        hid = tf.keras.layers.Conv2D(128, kernel_size=3, padding="same")(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
+        hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
+        hid = tf.keras.layers.MaxPool2D()(hid)
+        hid = tf.keras.layers.Dropout(0.25)(hid)
         # (None, 4, 4, 128)
 
-        model.add(tf.keras.layers.Conv2D(256, kernel_size=3, strides=1, padding="same"))
-        model.add(tf.keras.layers.BatchNormalization(momentum=0.8))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.MaxPool2D())
-        model.add(tf.keras.layers.Dropout(0.25))
+        hid = tf.keras.layers.Conv2D(256, kernel_size=3, strides=1, padding="same")(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
+        hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
+        hid = tf.keras.layers.MaxPool2D()(hid)
+        hid = tf.keras.layers.Dropout(0.25)(hid)
         # (None, 4, 4, 256)
-        model.add(tf.keras.layers.Flatten())
+        hid = tf.keras.layers.Flatten()(hid)
 
         # small FCN at end of convolution
-        model.add(tf.keras.layers.Dense(32))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.Dropout(0.25))
-
-        model.add(tf.keras.layers.Dense(16))
-        model.add(tf.keras.layers.LeakyReLU(alpha=0.2))
-        model.add(tf.keras.layers.Dropout(0.25))
-
-        # output
-        model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
-        model.summary()
-
-        img = tf.keras.layers.Input(shape=self.img_shape, name="image")
-        img_label = tf.keras.layers.Input(shape=(1,), dtype="int32", name="label")
+        hid = tf.keras.layers.Dense(32)(hid)
+        hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
+        hid = tf.keras.layers.Dropout(0.25)(hid)
 
         # incorporate label by multiplying image data by embedding, then reshaping and passing to CNN
-        label_embedding = tf.keras.layers.Embedding(self.img_label_size, np.prod(self.img_shape))(img_label)
-        flat_img = tf.keras.layers.Flatten(input_shape=self.img_shape)(img)
+        img_label = tf.keras.layers.Input(shape=(1,), dtype="int32", name="label")
+        label_embedding = tf.keras.layers.Embedding(self.img_label_size, 32)(img_label)
         label_embedding = tf.keras.layers.Flatten()(label_embedding)
-        augmented_img = tf.keras.layers.Multiply()([flat_img, label_embedding])
-        augmented_img = tf.keras.layers.Reshape(self.img_shape)(augmented_img)
+        hid = tf.keras.layers.Multiply()([hid, label_embedding])
 
-        validity = model(augmented_img)
+        hid = tf.keras.layers.Dense(16)(hid)
+        hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
+        hid = tf.keras.layers.Dropout(0.25)(hid)
 
-        return tf.keras.models.Model(inputs=[img, img_label], outputs=[validity])
+        # output
+        validity = tf.keras.layers.Dense(1, activation='sigmoid')(hid)
+
+        model = tf.keras.models.Model(inputs=[img, img_label], outputs=[validity])
+        model.summary()
+        return model
 
     def build_combined(self):
         # Required compiled G and D
@@ -158,10 +158,10 @@ class CDCGAN(GANBase):
         ensure_exists(sample_path)
 
         half_batch = int(batch_size / 2)
+        exp_replay = []
 
-        for epoch in range(epochs):
-            epoch += starting_epoch
-
+        epoch = starting_epoch
+        while epoch < epochs:
             # ---------------------
             #  Train Discriminator
             # ---------------------
@@ -175,7 +175,18 @@ class CDCGAN(GANBase):
             noise = np.random.normal(0, 1, (half_batch, self.noise_size))
             gen_imgs = self.generator.predict({"noise": noise, "label": labels})
 
+            # save one random generated image for experience replay
+            r_idx = np.random.randint(0, half_batch)
+            exp_replay.append((gen_imgs[r_idx], labels[r_idx]))
+
             # Train the discriminator
+            # If we have enough points, do experience replay
+            if len(exp_replay) == half_batch:
+                generated_images = np.array([p[0] for p in exp_replay])
+                labels = np.array([p[1] for p in exp_replay])
+                d_loss_replay = self.discriminator.train_on_batch([generated_images, labels],
+                                                                  np.zeros((half_batch, 1)))
+                exp_replay = []
             d_loss_real = self.discriminator.train_on_batch({"image": imgs, "label": labels}, np.ones((half_batch, 1)))
             d_loss_fake = self.discriminator.train_on_batch({"image": gen_imgs, "label": labels},
                                                             np.zeros((half_batch, 1)))
@@ -206,6 +217,7 @@ class CDCGAN(GANBase):
             # save model
             if epoch % save_interval == 0:
                 self.save(f"temp/{epoch}")
+            epoch += 1
 
     def save_sample(self, epoch, path):
         r, c = self.img_label_size, 5
@@ -227,7 +239,7 @@ class CDCGAN(GANBase):
                 axs[i, j].imshow(gen_imgs[cnt, :, :, :])  # , cmap='gray')  (if grayscale)
                 axs[i, j].axis('off')
                 cnt += 1
-        fig.savefig(f"{path}/{epoch}.png")
+        fig.savefig(f"{path}/{epoch}.png", dpi='figure')
         plt.close()
 
 
@@ -256,6 +268,6 @@ if __name__ == '__main__':
     # Rescale -1 to 1
     x_train = (x_train.astype(np.float32) - 127.5) / 127.5
 
-    gan.train(x_train, y_train, epochs=100001, batch_size=32, sample_interval=500,
+    gan.train(x_train, y_train, epochs=30001, batch_size=64, sample_interval=500,
               sample_path="samples/conditional_dcgan_cifar10", save_interval=5000)
     gan.save("models/conditional_dcgan_cifar10")
