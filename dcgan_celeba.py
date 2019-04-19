@@ -1,15 +1,10 @@
-import glob
 import json
-from multiprocessing import JoinableQueue, Process, Queue
 
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from PIL import Image
 
-from utils import ensure_exists
-
-DATASET_PATH = "datasets/celeba"
+from utils import celeba, ensure_exists
 
 
 class CelebADCGAN:
@@ -20,7 +15,7 @@ class CelebADCGAN:
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
         self.noise_size = noise_size
 
-        optimizer = tf.keras.optimizers.Adam(0.00002, 0.5)  # TODO return to 0.0002
+        optimizer = tf.keras.optimizers.Adam(0.0002, 0.5)
 
         if discriminator is None:
             # Build and compile the discriminator
@@ -255,47 +250,11 @@ class CelebADCGAN:
         plt.close()
 
 
-def load_img(i, o):
-    while not i.empty():
-        ipath = i.get()
-        img = Image.open(ipath)
-        x = np.array(img)
-        x = (x.astype(np.float32) - 127.5) / 127.5
-        o.put(x)
-        img.close()
-        i.task_done()
-
-
-def load_dataset():
-    # CelebA: JPEG, 218*178
-    # preprocessed to 128*128
-    # loads using 10 concurrent processes because of insanity
-    path = DATASET_PATH
-    x = []
-
-    q = JoinableQueue()
-    r = Queue()
-
-    for ipath in glob.glob(f"{path}/img/*.png")[60000:90000]:
-        q.put(ipath)
-
-    pool = [Process(target=load_img, args=(q, r)) for i in range(3)]
-    for p in pool:
-        p.start()
-    q.join()
-
-    for i in range(r.qsize()):
-        x.append(r.get())
-
-    print(f"Loaded data: {len(x)}")
-    return np.array(x)
-
-
 if __name__ == '__main__':
     gan = CelebADCGAN(img_rows=128, img_cols=128, img_channels=3, noise_size=100)
     # gan = CelebADCGAN.load("temp/136000")
 
-    x = load_dataset()
+    x = celeba()
 
     gan.train(x, epochs=200001, batch_size=64, sample_interval=200,
               sample_path="samples/celeba", save_interval=2000)
