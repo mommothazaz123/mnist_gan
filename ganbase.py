@@ -87,7 +87,8 @@ class GANBase:
             self.generator.summary(print_fn=write_to_summary_file)
             self.discriminator.summary(print_fn=write_to_summary_file)
             self.combined.summary(print_fn=write_to_summary_file)
-        tf.keras.utils.plot_model(self.combined, to_file=f"{path}/model.png", expand_nested=True)
+        tf.keras.utils.plot_model(self.discriminator, to_file=f"{path}/d.png")
+        tf.keras.utils.plot_model(self.generator, to_file=f"{path}/g.png")
 
     def build_generator(self):
         """To be overriden in subclasses"""
