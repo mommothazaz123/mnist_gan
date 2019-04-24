@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-from utils import celeba, ensure_exists
+from utils import celeba_64, ensure_exists
 
 
 class CelebADCGAN:
@@ -84,36 +84,31 @@ class CelebADCGAN:
         noise_shape = (self.noise_size,)
         noise = tf.keras.layers.Input(shape=noise_shape, name="noise")
 
-        hid = tf.keras.layers.Dense(8 * 8 * 512, activation='relu', input_shape=noise_shape)(noise)
-        hid = tf.keras.layers.Reshape((8, 8, 512))(hid)
+        hid = tf.keras.layers.Dense(4 * 4 * 1024, activation='relu', input_shape=noise_shape)(noise)
+        hid = tf.keras.layers.Reshape((4, 4, 1024))(hid)
+        # (None, 4, 4, 1024)
+
+        hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
+        hid = tf.keras.layers.Conv2D(512, kernel_size=4, padding='same')(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
+        hid = tf.keras.layers.Activation('relu')(hid)
         # (None, 8, 8, 512)
 
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
-        hid = tf.keras.layers.Conv2D(256, kernel_size=3, padding='same')(hid)
+        hid = tf.keras.layers.Conv2D(256, kernel_size=4, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('relu')(hid)
         # (None, 16, 16, 256)
 
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
-        hid = tf.keras.layers.Conv2D(128, kernel_size=3, padding='same')(hid)
+        hid = tf.keras.layers.Conv2D(128, kernel_size=4, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('relu')(hid)
         # (None, 32, 32, 128)
 
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
-        hid = tf.keras.layers.Conv2D(64, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
-        hid = tf.keras.layers.Activation('relu')(hid)
-        # (None, 64, 64, 64)
-
-        hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
-        hid = tf.keras.layers.Conv2D(32, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
-        hid = tf.keras.layers.Activation('relu')(hid)
-        # (None, 128, 128, 32)
-
-        img = tf.keras.layers.Conv2D(self.channels, kernel_size=3, padding='same', activation='tanh')(hid)
-        # (None, 128, 128, 3)
+        img = tf.keras.layers.Conv2D(self.channels, kernel_size=4, padding='same', activation='tanh')(hid)
+        # (None, 64, 64, 3)
 
         model = tf.keras.models.Model(inputs=noise, outputs=img)
         model.summary()
@@ -123,29 +118,27 @@ class CelebADCGAN:
         img = tf.keras.layers.Input(shape=self.img_shape, name="image")
 
         # Use convolutional network to improve discriminator
-        hid = tf.keras.layers.Conv2D(32, kernel_size=3, strides=2, input_shape=self.img_shape, padding='same')(img)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
-        hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
-        hid = tf.keras.layers.Dropout(0.25)(hid)
-        # (None, 64, 64, 32)
+        hid = tf.keras.layers.Conv2D(128, kernel_size=4, strides=2, input_shape=self.img_shape, padding='same')(img)
+        hid = tf.keras.layers.ReLU()(hid)
+        # (None, 32, 32, 128)
 
-        hid = tf.keras.layers.Conv2D(64, kernel_size=3, strides=2, padding="same")(hid)
+        hid = tf.keras.layers.Conv2D(256, kernel_size=4, strides=2, padding="same")(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
         hid = tf.keras.layers.Dropout(0.25)(hid)
-        # (None, 32, 32, 64)
+        # (None, 16, 16, 256)
 
-        hid = tf.keras.layers.Conv2D(128, kernel_size=3, strides=2, padding="same")(hid)
+        hid = tf.keras.layers.Conv2D(512, kernel_size=4, strides=2, padding="same")(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
         hid = tf.keras.layers.Dropout(0.25)(hid)
-        # (None, 16, 16, 128)
+        # (None, 8, 8, 512)
 
-        hid = tf.keras.layers.Conv2D(128, kernel_size=3, strides=2, padding="same")(hid)
+        hid = tf.keras.layers.Conv2D(1024, kernel_size=4, strides=2, padding="same")(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.LeakyReLU(alpha=0.2)(hid)
         hid = tf.keras.layers.Dropout(0.25)(hid)
-        # (None, 8, 8, 128)
+        # (None, 4, 4, 1024)
 
         hid = tf.keras.layers.Flatten()(hid)
         validity = tf.keras.layers.Dense(1, activation='sigmoid')(hid)
@@ -251,11 +244,10 @@ class CelebADCGAN:
 
 
 if __name__ == '__main__':
-    gan = CelebADCGAN(img_rows=128, img_cols=128, img_channels=3, noise_size=100)
-    # gan = CelebADCGAN.load("temp/136000")
+    gan = CelebADCGAN(img_rows=64, img_cols=64, img_channels=3, noise_size=100)
 
-    x = celeba()
+    x = celeba_64()
 
     gan.train(x, epochs=200001, batch_size=64, sample_interval=200,
-              sample_path="samples/celeba", save_interval=2000)
-    gan.save("models/celeba_200k")
+              sample_path="samples/celeba_dcgan_64", save_interval=2000)
+    gan.save("models/celeba_dcgan_64")

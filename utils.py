@@ -49,3 +49,28 @@ def celeba(samples=30000):
 
     print(f"Loaded data: {len(x)}")
     return np.array(x)
+
+
+def celeba_64(samples=50000):
+    # CelebA: JPEG, 218*178
+    # preprocessed to 64*64
+    # loads using 3 concurrent processes because of insanity
+    path = "datasets/celeba"
+    x = []
+
+    q = JoinableQueue()
+    r = Queue()
+
+    for ipath in glob.glob(f"{path}/img_64/*.png")[:samples]:
+        q.put(ipath)
+
+    pool = [Process(target=load_img, args=(q, r)) for i in range(3)]
+    for p in pool:
+        p.start()
+    q.join()
+
+    for i in range(r.qsize()):
+        x.append(r.get())
+
+    print(f"Loaded data: {len(x)}")
+    return np.array(x)

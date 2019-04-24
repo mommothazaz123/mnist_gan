@@ -118,4 +118,4 @@ dmypy.json
 models/
 temp/
 datasets/*/raw
-datasets/*/img
+datasets/*/img*
