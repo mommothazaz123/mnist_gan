@@ -194,7 +194,7 @@ class CelebADCGAN:
                 d_loss_replay = self.discriminator.train_on_batch(generated_images,
                                                                   np.zeros((half_batch, 1)))
                 exp_replay = []
-            d_loss_real = self.discriminator.train_on_batch(imgs, np.ones((half_batch, 1)))
+            d_loss_real = self.discriminator.train_on_batch(imgs, np.array([0.9] * half_batch))
             d_loss_fake = self.discriminator.train_on_batch(gen_imgs,
                                                             np.zeros((half_batch, 1)))
             d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
@@ -231,7 +231,7 @@ class CelebADCGAN:
         # Rescale images 0 - 1
         gen_imgs = 0.5 * gen_imgs + 0.5
 
-        fig, axs = plt.subplots(r, c, figsize=(12, 9.5))
+        fig, axs = plt.subplots(r, c, figsize=(6, 5))
         fig.subplots_adjust(left=0.03, right=0.97, hspace=0.3, wspace=0.05)
         cnt = 0
         for i in range(r):
@@ -244,10 +244,11 @@ class CelebADCGAN:
 
 
 if __name__ == '__main__':
-    gan = CelebADCGAN(img_rows=64, img_cols=64, img_channels=3, noise_size=100)
+    # gan = CelebADCGAN(img_rows=64, img_cols=64, img_channels=3, noise_size=100)
+    gan = CelebADCGAN.load("temp/42000")
 
     x = celeba_64()
 
-    gan.train(x, epochs=200001, batch_size=64, sample_interval=200,
-              sample_path="samples/celeba_dcgan_64", save_interval=2000)
+    gan.train(x, epochs=200001, batch_size=32, sample_interval=200,
+              sample_path="samples/celeba_dcgan_64", save_interval=2000, starting_epoch=42000)
     gan.save("models/celeba_dcgan_64")
