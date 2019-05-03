@@ -62,10 +62,11 @@ class CelebABEGAN:
         embedding_shape = (h,)
         noise = tf.keras.layers.Input(shape=embedding_shape, name="h", dtype="float32")
 
-        hid = tf.keras.layers.Dense(8 * 8 * self.n, input_shape=embedding_shape, activation='elu')(noise)
+        hid = tf.keras.layers.Dense(8 * 8 * self.n, input_shape=embedding_shape)(noise)
         hid = tf.keras.layers.Reshape((8, 8, self.n))(hid)
 
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -74,6 +75,7 @@ class CelebABEGAN:
 
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -82,6 +84,7 @@ class CelebABEGAN:
 
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -99,6 +102,7 @@ class CelebABEGAN:
         img = tf.keras.layers.Input(shape=self.img_shape, name="image", dtype="float32")
 
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(img)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -106,6 +110,7 @@ class CelebABEGAN:
         # (None, 32, 32, n)
 
         hid = tf.keras.layers.Conv2D(2 * self.n, kernel_size=3, padding='same', strides=2)(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(2 * self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -113,8 +118,10 @@ class CelebABEGAN:
         # (None, 16, 16, 2n)
 
         hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same', strides=2)(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same')(hid)
+        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -122,7 +129,7 @@ class CelebABEGAN:
         # (None, 8, 8, 3n)
 
         hid = tf.keras.layers.Flatten()(hid)
-        enc_img = tf.keras.layers.Dense(self.h)(hid)
+        enc_img = tf.keras.layers.Dense(self.h, activation='tanh')(hid)
 
         model = tf.keras.models.Model(inputs=img, outputs=enc_img)
         model.summary()
@@ -244,12 +251,12 @@ class CelebABEGAN:
 
         idx = np.random.randint(0, x.shape[0], r * c)
         real = x[idx]
-        real_imgs = self.discriminator.predict(real)
+        real_imgs = self.discriminator(real)
 
         noise = np.random.uniform(-1, 1, (r * c, self.z))
-        gen_imgs = self.generator.predict(noise)
+        gen_imgs = self.generator(noise)
 
-        combined_images = self.combined.predict(noise)
+        combined_images = self.combined(noise)
 
         def save(imgs, fpath):
             # Rescale images 0 - 1
@@ -277,6 +284,6 @@ if __name__ == '__main__':
 
     x = celeba_32(260000)
 
-    gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.8, batch_size=16, sample_interval=500,
+    gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.75, batch_size=16, sample_interval=500,
               sample_path="samples/celeba_began_batchnorm_32", save_interval=5000)
     gan.save("models/celeba_began_batchnorm_32")
