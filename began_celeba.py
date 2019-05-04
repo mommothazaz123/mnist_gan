@@ -66,7 +66,6 @@ class CelebABEGAN:
         hid = tf.keras.layers.Reshape((8, 8, self.n))(hid)
 
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -75,7 +74,6 @@ class CelebABEGAN:
 
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -84,7 +82,6 @@ class CelebABEGAN:
 
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -102,26 +99,23 @@ class CelebABEGAN:
         img = tf.keras.layers.Input(shape=self.img_shape, name="image", dtype="float32")
 
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(img)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
+
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         # (None, 32, 32, n)
-
-        hid = tf.keras.layers.Conv2D(2 * self.n, kernel_size=3, padding='same', strides=2)(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
-        hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(2 * self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
-        # (None, 16, 16, 2n)
 
-        hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same', strides=2)(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
+        hid = tf.keras.layers.Conv2D(2 * self.n, kernel_size=3, padding='same', strides=2)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
+        # (None, 16, 16, 2n)
         hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
+        hid = tf.keras.layers.Activation('elu')(hid)
+
+        hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same', strides=2)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
@@ -129,7 +123,7 @@ class CelebABEGAN:
         # (None, 8, 8, 3n)
 
         hid = tf.keras.layers.Flatten()(hid)
-        enc_img = tf.keras.layers.Dense(self.h, activation='tanh')(hid)
+        enc_img = tf.keras.layers.Dense(self.h)(hid)
 
         model = tf.keras.models.Model(inputs=img, outputs=enc_img)
         model.summary()
@@ -254,6 +248,7 @@ class CelebABEGAN:
         real_imgs = self.discriminator(real)
 
         noise = np.random.uniform(-1, 1, (r * c, self.z))
+        noise = noise.astype("float32")
         gen_imgs = self.generator(noise)
 
         combined_images = self.combined(noise)
@@ -262,15 +257,15 @@ class CelebABEGAN:
             # Rescale images 0 - 1
             imgs = 0.5 * imgs + 0.5
 
-            fig, axs = plt.subplots(r, c, figsize=(self.img_cols / 10, self.img_rows / 12))
-            fig.subplots_adjust(left=0.03, right=0.97, hspace=0.3, wspace=0.05)
+            fig, axs = plt.subplots(r, c, figsize=(self.img_cols * c, self.img_rows * r))
+            fig.subplots_adjust(hspace=0, wspace=0, left=0, right=1, top=1, bottom=0)
             cnt = 0
             for i in range(r):
                 for j in range(c):
                     axs[i, j].imshow(imgs[cnt, :, :, :])
                     axs[i, j].axis('off')
                     cnt += 1
-            fig.savefig(fpath, dpi=100)
+            fig.savefig(fpath, dpi=1)
             plt.close()
 
         save(gen_imgs, f"{path}/g-{epoch}.png")
