@@ -1,3 +1,5 @@
+import json
+
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
@@ -18,7 +20,7 @@ class CelebABEGAN:
         # for training
         self.k = 0
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.00005)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.00001)
 
         # Build and compile the discriminator
         self.discriminator = self.build_discriminator()
@@ -31,6 +33,8 @@ class CelebABEGAN:
 
     def load(self, path):
         path = path.rstrip('/')
+        with open(f"{path}/config.json") as f:
+            self.k = json.load(f)['k']
         self.generator.load_weights(f"{path}/g.h5")
         self.discriminator.load_weights(f"{path}/d.h5")
 
@@ -38,6 +42,8 @@ class CelebABEGAN:
         """Saves the GAN to a folder."""
         path = path.rstrip('/')
         ensure_exists(path)
+        with open(f"{path}/config.json", 'w') as f:
+            json.dump({"k": self.k}, f)
         self.generator.save_weights(f"{path}/g.h5", save_format='h5')
         self.discriminator.save_weights(f"{path}/d.h5", save_format='h5')
         try:
@@ -221,7 +227,7 @@ class CelebABEGAN:
             # ---------------------
             if epoch % (steps_per_epoch * 100) == 0:
                 self.optimizer = tf.train.AdamOptimizer(
-                    learning_rate=0.00005 * pow(0.5, epoch // (steps_per_epoch * 100)))
+                    learning_rate=0.00001 * pow(0.5, epoch // (steps_per_epoch * 100)))
 
             # ---------------------
             #  Status report
@@ -279,9 +285,10 @@ class CelebABEGAN:
 if __name__ == '__main__':
     tf.enable_eager_execution()
     gan = CelebABEGAN(img_rows=32, img_cols=32, img_channels=3, h=64, z=64, n=64)
+    gan.load("models/celeba_began_32/45000")
 
     x = celeba_32(260000)
 
-    gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.75, batch_size=16, sample_interval=500,
-              sample_path="samples/celeba_began_32_2", save_interval=5000)
+    gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.5, batch_size=16, sample_interval=500,
+              sample_path="samples/celeba_began_32_2", save_interval=5000, starting_epoch=45000)
     gan.save("models/celeba_began_32_2")
