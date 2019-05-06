@@ -18,7 +18,7 @@ class CelebABEGAN:
         # for training
         self.k = 0
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.0001)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.00005)
 
         # Build and compile the discriminator
         self.discriminator = self.build_discriminator()
@@ -63,32 +63,37 @@ class CelebABEGAN:
         noise = tf.keras.layers.Input(shape=embedding_shape, name="h", dtype="float32")
 
         hid = tf.keras.layers.Dense(8 * 8 * self.n, input_shape=embedding_shape)(noise)
-        hid = tf.keras.layers.Reshape((8, 8, self.n))(hid)
+        h0 = tf.keras.layers.Reshape((8, 8, self.n))(hid)
 
-        hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
+        hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(h0)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         # (None, 8, 8, n)
 
+        h0 = tf.keras.layers.UpSampling2D((2, 2))(h0)
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
+        hid = tf.keras.layers.Concatenate()([hid, h0])  # skip connection 1
+
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         # (None, 16, 16, n)
 
+        h0 = tf.keras.layers.UpSampling2D((2, 2))(h0)
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
+        hid = tf.keras.layers.Concatenate()([hid, h0])  # skip connection 2
+
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
+        hid = tf.keras.layers.Activation('elu')(hid)
+        hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         # (None, 32, 32, n)
 
-        img = tf.keras.layers.Conv2D(self.channels, kernel_size=3, padding='same', activation='tanh')(hid)
+        img = tf.keras.layers.Conv2D(self.channels, kernel_size=3, padding='same')(hid)
         # (None, 32, 32, 3)
 
         model = tf.keras.models.Model(inputs=noise, outputs=img)
@@ -105,20 +110,17 @@ class CelebABEGAN:
         hid = tf.keras.layers.Activation('elu')(hid)
         # (None, 32, 32, n)
         hid = tf.keras.layers.Conv2D(2 * self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
 
         hid = tf.keras.layers.Conv2D(2 * self.n, kernel_size=3, padding='same', strides=2)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         # (None, 16, 16, 2n)
         hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
 
         hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same', strides=2)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(3 * self.n, kernel_size=3, padding='same')(hid)
-        hid = tf.keras.layers.BatchNormalization(momentum=0.8)(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         # (None, 8, 8, 3n)
 
@@ -154,7 +156,7 @@ class CelebABEGAN:
 
     def l1loss(self, model, x, y):
         y_ = model(x)
-        return tf.reduce_mean(tf.abs(y_ - y))
+        return tf.reduce_mean(tf.abs(tf.subtract(y_, y)))
 
     def grad(self, model, inputs, targets):
         with tf.GradientTape() as tape:
@@ -173,6 +175,7 @@ class CelebABEGAN:
         ensure_exists(sample_path)
 
         epoch = starting_epoch
+        steps_per_epoch = len(x) // batch_size
         while epoch < epochs:
             # ---------------------
             #  Train Discriminator
@@ -197,15 +200,13 @@ class CelebABEGAN:
             #  Train Generator
             # ---------------------
             # Generate a batch of new images
-            noise = np.random.uniform(-1, 1, (2 * batch_size, self.z))
+            noise = np.random.uniform(-1, 1, (batch_size, self.z))
             noise = noise.astype("float32")
             fake = self.generator(noise)
 
             # Train the generator on generated images?
-            self.discriminator.trainable = False
             g_loss, g_grads = self.grad(self.combined, noise, fake)
             self.optimizer.apply_gradients(zip(g_grads, self.combined.trainable_variables))
-            self.discriminator.trainable = True
 
             # ---------------------
             #  Update k
@@ -218,8 +219,9 @@ class CelebABEGAN:
             # ---------------------
             #  LR Decay
             # ---------------------
-            if epoch % 30000 == 0:
-                self.optimizer = tf.train.AdamOptimizer(learning_rate=0.0001 * pow(0.5, epoch // 30000))
+            if epoch % (steps_per_epoch * 100) == 0:
+                self.optimizer = tf.train.AdamOptimizer(
+                    learning_rate=0.00005 * pow(0.5, epoch // (steps_per_epoch * 100)))
 
             # ---------------------
             #  Status report
@@ -256,8 +258,9 @@ class CelebABEGAN:
         def save(imgs, fpath):
             # Rescale images 0 - 1
             imgs = 0.5 * imgs + 0.5
+            imgs = np.clip(imgs, 0, 1)
 
-            fig, axs = plt.subplots(r, c, figsize=(self.img_cols * c, self.img_rows * r))
+            fig, axs = plt.subplots(r, c, figsize=(self.img_cols * c / 100, self.img_rows * r / 100))
             fig.subplots_adjust(hspace=0, wspace=0, left=0, right=1, top=1, bottom=0)
             cnt = 0
             for i in range(r):
@@ -265,7 +268,7 @@ class CelebABEGAN:
                     axs[i, j].imshow(imgs[cnt, :, :, :])
                     axs[i, j].axis('off')
                     cnt += 1
-            fig.savefig(fpath, dpi=1)
+            fig.savefig(fpath, dpi=100)
             plt.close()
 
         save(gen_imgs, f"{path}/g-{epoch}.png")
@@ -280,5 +283,5 @@ if __name__ == '__main__':
     x = celeba_32(260000)
 
     gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.75, batch_size=16, sample_interval=500,
-              sample_path="samples/celeba_began_batchnorm_32", save_interval=5000)
-    gan.save("models/celeba_began_batchnorm_32")
+              sample_path="samples/celeba_began_32_2", save_interval=5000)
+    gan.save("models/celeba_began_32_2")
