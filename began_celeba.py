@@ -20,7 +20,7 @@ class CelebABEGAN:
         # for training
         self.k = 0
 
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=0.00001)
+        self.optimizer = None
 
         # Build and compile the discriminator
         self.discriminator = self.build_discriminator()
@@ -33,6 +33,7 @@ class CelebABEGAN:
 
     def load(self, path):
         path = path.rstrip('/')
+        input(f"You are loading weights from {path}. Press enter to continue.")
         with open(f"{path}/config.json") as f:
             self.k = json.load(f)['k']
         self.generator.load_weights(f"{path}/g.h5")
@@ -43,7 +44,7 @@ class CelebABEGAN:
         path = path.rstrip('/')
         ensure_exists(path)
         with open(f"{path}/config.json", 'w') as f:
-            json.dump({"k": self.k}, f)
+            json.dump({"k": float(self.k)}, f)
         self.generator.save_weights(f"{path}/g.h5", save_format='h5')
         self.discriminator.save_weights(f"{path}/d.h5", save_format='h5')
         try:
@@ -154,15 +155,14 @@ class CelebABEGAN:
         return m
 
     def build_combined(self):
-        # discrim should be compiled before calling this
         z = tf.keras.layers.Input(shape=(self.z,), name="noise")
         img = self.generator(z)
-        valid = self.discriminator(img)
-        return tf.keras.models.Model(inputs=z, outputs=valid)
+        d_img = self.discriminator(img)
+        return tf.keras.models.Model(inputs=z, outputs=d_img)
 
     def l1loss(self, model, x, y):
         y_ = model(x)
-        return tf.reduce_mean(tf.abs(tf.subtract(y_, y)))
+        return tf.reduce_mean(tf.abs(y_ - y))
 
     def grad(self, model, inputs, targets):
         with tf.GradientTape() as tape:
@@ -182,9 +182,16 @@ class CelebABEGAN:
 
         epoch = starting_epoch
         steps_per_epoch = len(x) // batch_size
+        decay_every = 16000
+        initial_lr = 0.0001
+
+        lr = initial_lr * pow(0.5, epoch // decay_every)
+        print(f"Initialized initial learning rate at {lr}")
+        self.optimizer = tf.train.AdamOptimizer(lr)
+
         while epoch < epochs:
             # ---------------------
-            #  Train Discriminator
+            #  Calculate gradients on batch
             # ---------------------
 
             # Select a random batch of images
@@ -192,27 +199,25 @@ class CelebABEGAN:
             real = x[idx]
 
             # Generate a batch of new images
-            noise = np.random.uniform(-1, 1, (batch_size, self.z))
-            noise = noise.astype("float32")
-            fake = self.generator(noise)
-
-            # train
-            d_loss_real, d_loss_gen, d_loss, d_grads = self.d_grad(self.discriminator, real, real, fake, fake)
-            # print(d_loss_real)
-            # print(d_loss_fake)
-            self.optimizer.apply_gradients(zip(d_grads, self.discriminator.trainable_variables))
-
-            # ---------------------
-            #  Train Generator
-            # ---------------------
-            # Generate a batch of new images
-            noise = np.random.uniform(-1, 1, (batch_size, self.z))
+            noise = np.random.uniform(-1., 1., (batch_size, self.z))
             noise = noise.astype("float32")
             fake = self.generator(noise)
 
             # Train the generator on generated images?
+            self.discriminator.trainable = False
             g_loss, g_grads = self.grad(self.combined, noise, fake)
+            self.discriminator.trainable = True
+
+            # train
+            d_loss_real, d_loss_gen, d_loss, d_grads = self.d_grad(self.discriminator, real, real, fake, fake)
+
+            # ---------------------
+            #  Apply Gradients
+            # ---------------------
+            self.discriminator.trainable = False
             self.optimizer.apply_gradients(zip(g_grads, self.combined.trainable_variables))
+            self.discriminator.trainable = True
+            self.optimizer.apply_gradients(zip(d_grads, self.discriminator.trainable_variables))
 
             # ---------------------
             #  Update k
@@ -225,9 +230,9 @@ class CelebABEGAN:
             # ---------------------
             #  LR Decay
             # ---------------------
-            if epoch % (steps_per_epoch * 100) == 0:
-                self.optimizer = tf.train.AdamOptimizer(
-                    learning_rate=0.00001 * pow(0.5, epoch // (steps_per_epoch * 100)))
+            if epoch % decay_every == 0:
+                lr = initial_lr * pow(0.5, epoch // decay_every)
+                print(f"Decaying learning rate to {lr}")
 
             # ---------------------
             #  Status report
@@ -255,7 +260,7 @@ class CelebABEGAN:
         real = x[idx]
         real_imgs = self.discriminator(real)
 
-        noise = np.random.uniform(-1, 1, (r * c, self.z))
+        noise = np.random.uniform(-1., 1., (r * c, self.z))
         noise = noise.astype("float32")
         gen_imgs = self.generator(noise)
 
@@ -281,14 +286,30 @@ class CelebABEGAN:
         save(real_imgs, f"{path}/d-{epoch}.png")
         save(combined_images, f"{path}/c-{epoch}.png")
 
+    def tests(self):
+        import copy
+        self.discriminator.trainable = False
+        print(self.combined.trainable_variables == self.generator.trainable_variables)
+
+        # Generate a batch of new images
+        noise = np.random.uniform(-1., 1., (16, self.z))
+        noise = noise.astype("float32")
+        fake = self.generator(noise)
+        old_fake = copy.deepcopy(fake)
+
+        # train
+        d_loss, d_grads = self.grad(self.discriminator, fake, fake)
+
+        print(fake == old_fake)
+
 
 if __name__ == '__main__':
     tf.enable_eager_execution()
     gan = CelebABEGAN(img_rows=32, img_cols=32, img_channels=3, h=64, z=64, n=64)
-    gan.load("models/celeba_began_32/45000")
+    # gan.tests()
 
-    x = celeba_32(260000)
+    x = celeba_32(50000)
 
     gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.5, batch_size=16, sample_interval=500,
-              sample_path="samples/celeba_began_32_2", save_interval=5000, starting_epoch=45000)
+              sample_path="samples/celeba_began_32_2", save_interval=5000)
     gan.save("models/celeba_began_32_2")

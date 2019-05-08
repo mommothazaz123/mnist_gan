@@ -1,9 +1,7 @@
-import matplotlib.pyplot as plt
-import numpy as np
 import tensorflow as tf
 
 from began_celeba import CelebABEGAN
-from utils import celeba_64, ensure_exists
+from utils import celeba_64
 
 
 class CelebABEGAN2(CelebABEGAN):
@@ -47,6 +45,8 @@ class CelebABEGAN2(CelebABEGAN):
         hid = tf.keras.layers.UpSampling2D((2, 2))(hid)
         hid = tf.keras.layers.Concatenate()([hid, h0])  # skip connection 3
 
+        hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
+        hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
         hid = tf.keras.layers.Activation('elu')(hid)
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(hid)
@@ -104,6 +104,6 @@ if __name__ == '__main__':
 
     x = celeba_64(50000)
 
-    gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.75, batch_size=16, sample_interval=500,
+    gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.5, batch_size=16, sample_interval=500,
               sample_path="samples/celeba_began_64", save_interval=5000)
     gan.save("models/celeba_began_64")
