@@ -18,7 +18,7 @@ class CelebABEGAN:
         self.n = n
 
         # for training
-        self.k = 0
+        self.k = tf.Variable(0., trainable=False)
 
         self.optimizer = None
 
@@ -35,7 +35,7 @@ class CelebABEGAN:
         path = path.rstrip('/')
         input(f"You are loading weights from {path}. Press enter to continue.")
         with open(f"{path}/config.json") as f:
-            self.k = json.load(f)['k']
+            self.k = tf.Variable(json.load(f)['k'], trainable=False)
         self.generator.load_weights(f"{path}/g.h5")
         self.discriminator.load_weights(f"{path}/d.h5")
 
@@ -44,7 +44,7 @@ class CelebABEGAN:
         path = path.rstrip('/')
         ensure_exists(path)
         with open(f"{path}/config.json", 'w') as f:
-            json.dump({"k": float(self.k)}, f)
+            json.dump({"k": float(self.k.numpy())}, f)
         self.generator.save_weights(f"{path}/g.h5", save_format='h5')
         self.discriminator.save_weights(f"{path}/d.h5", save_format='h5')
         try:
@@ -164,17 +164,17 @@ class CelebABEGAN:
         y_ = model(x)
         return tf.reduce_mean(tf.abs(y_ - y))
 
-    def grad(self, model, inputs, targets):
+    def g_grad(self, inputs, targets):
         with tf.GradientTape() as tape:
-            loss_value = self.l1loss(model, inputs, targets)
-        return loss_value, tape.gradient(loss_value, model.trainable_variables)
+            loss_value = self.l1loss(self.combined, inputs, targets)
+        return loss_value, tape.gradient(loss_value, self.generator.trainable_variables)
 
-    def d_grad(self, model, real_in, real_out, gen_in, gen_out):
+    def d_grad(self, real_in, real_out, gen_in, gen_out):
         with tf.GradientTape() as tape:
-            real_loss = self.l1loss(model, real_in, real_out)
-            gen_loss = -self.k * self.l1loss(model, gen_in, gen_out)
+            real_loss = self.l1loss(self.discriminator, real_in, real_out)
+            gen_loss = -self.k * self.l1loss(self.discriminator, gen_in, gen_out)
             loss_value = real_loss + gen_loss
-        return real_loss, gen_loss, loss_value, tape.gradient(loss_value, model.trainable_variables)
+        return real_loss, gen_loss, loss_value, tape.gradient(loss_value, self.discriminator.trainable_variables)
 
     def train(self, x, epochs, k_lambda, gamma, batch_size=16, sample_interval=50, sample_path="samples/unknown",
               starting_epoch=0, save_interval=5000):
@@ -204,19 +204,15 @@ class CelebABEGAN:
             fake = self.generator(noise)
 
             # Train the generator on generated images?
-            self.discriminator.trainable = False
-            g_loss, g_grads = self.grad(self.combined, noise, fake)
-            self.discriminator.trainable = True
+            g_loss, g_grads = self.g_grad(noise, fake)
 
             # train
-            d_loss_real, d_loss_gen, d_loss, d_grads = self.d_grad(self.discriminator, real, real, fake, fake)
+            d_loss_real, d_loss_gen, d_loss, d_grads = self.d_grad(real, real, fake, fake)
 
             # ---------------------
             #  Apply Gradients
             # ---------------------
-            self.discriminator.trainable = False
-            self.optimizer.apply_gradients(zip(g_grads, self.combined.trainable_variables))
-            self.discriminator.trainable = True
+            self.optimizer.apply_gradients(zip(g_grads, self.generator.trainable_variables))
             self.optimizer.apply_gradients(zip(d_grads, self.discriminator.trainable_variables))
 
             # ---------------------
@@ -268,7 +264,7 @@ class CelebABEGAN:
 
         def save(imgs, fpath):
             # Rescale images 0 - 1
-            imgs = 0.5 * imgs + 0.5
+            # imgs = 0.5 * imgs + 0.5
             imgs = np.clip(imgs, 0, 1)
 
             fig, axs = plt.subplots(r, c, figsize=(self.img_cols * c / 100, self.img_rows * r / 100))
@@ -298,7 +294,7 @@ class CelebABEGAN:
         old_fake = copy.deepcopy(fake)
 
         # train
-        d_loss, d_grads = self.grad(self.discriminator, fake, fake)
+        d_loss, d_grads = self.g_grad(fake, fake)
 
         print(fake == old_fake)
 
@@ -308,7 +304,7 @@ if __name__ == '__main__':
     gan = CelebABEGAN(img_rows=32, img_cols=32, img_channels=3, h=64, z=64, n=64)
     # gan.tests()
 
-    x = celeba_32(50000)
+    x = celeba_32(50000, True)
 
     gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.5, batch_size=16, sample_interval=500,
               sample_path="samples/celeba_began_32_2", save_interval=5000)

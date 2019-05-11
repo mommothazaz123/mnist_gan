@@ -278,14 +278,15 @@ class CelebAWGAN:
         gen_imgs = self.generator.predict(noise)
 
         # Rescale images 0 - 1
-        gen_imgs = 0.5 * gen_imgs + 0.5
+        imgs = 0.5 * gen_imgs + 0.5
+        imgs = np.clip(imgs, 0, 1)
 
-        fig, axs = plt.subplots(r, c, figsize=(12, 9.5))
-        fig.subplots_adjust(left=0.03, right=0.97, hspace=0.3, wspace=0.05)
+        fig, axs = plt.subplots(r, c, figsize=(self.img_cols * c / 100, self.img_rows * r / 100))
+        fig.subplots_adjust(hspace=0, wspace=0, left=0, right=1, top=1, bottom=0)
         cnt = 0
         for i in range(r):
             for j in range(c):
-                axs[i, j].imshow(gen_imgs[cnt, :, :, :])
+                axs[i, j].imshow(imgs[cnt, :, :, :])
                 axs[i, j].axis('off')
                 cnt += 1
         fig.savefig(f"{path}/{epoch}.png", dpi=100)

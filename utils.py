@@ -15,12 +15,15 @@ def ensure_exists(dir_path):
         print(f"Created directory {dir_path}!")
 
 
-def load_img(i, o):
+def load_img(i, o, clip_0_1=False):
     while not i.empty():
         ipath = i.get()
         img = Image.open(ipath)
         x = np.array(img)
-        x = (x.astype(np.float32) - 127.5) / 127.5
+        if not clip_0_1:
+            x = (x.astype(np.float32) - 127.5) / 127.5
+        else:
+            x = x.astype(np.float32) / 255.
         o.put(x)
         img.close()
         i.task_done()
@@ -51,7 +54,7 @@ def celeba(samples=30000):
     return np.array(x)
 
 
-def celeba_64(samples=50000):
+def celeba_64(samples=50000, clip_0_1=False):
     # CelebA: JPEG, 218*178
     # preprocessed to 64*64
     # loads using 3 concurrent processes because of insanity
@@ -64,7 +67,7 @@ def celeba_64(samples=50000):
     for ipath in glob.glob(f"{path}/img_64/*.png")[:samples]:
         q.put(ipath)
 
-    pool = [Process(target=load_img, args=(q, r)) for i in range(3)]
+    pool = [Process(target=load_img, args=(q, r, clip_0_1)) for i in range(3)]
     for p in pool:
         p.start()
     q.join()
@@ -75,7 +78,8 @@ def celeba_64(samples=50000):
     print(f"Loaded data: {len(x)}")
     return np.array(x)
 
-def celeba_32(samples=100000):
+
+def celeba_32(samples=100000, clip_0_1=False):
     # CelebA: JPEG, 218*178
     # preprocessed to 64*64
     # loads using 3 concurrent processes because of insanity
@@ -88,7 +92,7 @@ def celeba_32(samples=100000):
     for ipath in glob.glob(f"{path}/img_32/*.png")[:samples]:
         q.put(ipath)
 
-    pool = [Process(target=load_img, args=(q, r)) for i in range(5)]
+    pool = [Process(target=load_img, args=(q, r, clip_0_1)) for i in range(5)]
     for p in pool:
         p.start()
     q.join()

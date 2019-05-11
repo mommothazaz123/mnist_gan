@@ -10,7 +10,7 @@ class CelebABEGAN2(CelebABEGAN):
 
     def decoder(self, h):
         embedding_shape = (h,)
-        noise = tf.keras.layers.Input(shape=embedding_shape, name="h", dtype="float32")
+        noise = tf.keras.layers.Input(shape=embedding_shape, dtype="float32")
 
         hid = tf.keras.layers.Dense(8 * 8 * self.n, input_shape=embedding_shape)(noise)
         h0 = tf.keras.layers.Reshape((8, 8, self.n))(hid)
@@ -61,7 +61,7 @@ class CelebABEGAN2(CelebABEGAN):
         return model
 
     def encoder(self):
-        img = tf.keras.layers.Input(shape=self.img_shape, name="image", dtype="float32")
+        img = tf.keras.layers.Input(shape=self.img_shape, dtype="float32")
 
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(img)
         hid = tf.keras.layers.Activation('elu')(hid)
@@ -102,8 +102,8 @@ if __name__ == '__main__':
     tf.enable_eager_execution()
     gan = CelebABEGAN2(img_rows=64, img_cols=64, img_channels=3, h=64, z=64, n=64)
 
-    x = celeba_64(50000)
+    x = celeba_64(50000, True)
 
-    gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.5, batch_size=16, sample_interval=500,
+    gan.train(x, epochs=1000001, k_lambda=0.001, gamma=0.75, batch_size=16, sample_interval=500,
               sample_path="samples/celeba_began_64", save_interval=5000)
     gan.save("models/celeba_began_64")
