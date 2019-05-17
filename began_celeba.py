@@ -28,9 +28,6 @@ class CelebABEGAN:
         # Build and compile the generator
         self.generator = self.build_generator()
 
-        # Build and compile the combined model
-        self.combined = self.build_combined()
-
     def load(self, path):
         path = path.rstrip('/')
         input(f"You are loading weights from {path}. Press enter to continue.")
@@ -61,13 +58,12 @@ class CelebABEGAN:
 
             self.generator.summary(print_fn=write_to_summary_file)
             self.discriminator.summary(print_fn=write_to_summary_file)
-            self.combined.summary(print_fn=write_to_summary_file)
         tf.keras.utils.plot_model(self.discriminator, to_file=f"{path}/d.png")
         tf.keras.utils.plot_model(self.generator, to_file=f"{path}/g.png")
 
     def decoder(self, h):
         embedding_shape = (h,)
-        noise = tf.keras.layers.Input(shape=embedding_shape, name="h", dtype="float32")
+        noise = tf.keras.layers.Input(shape=embedding_shape, dtype="float32")
 
         hid = tf.keras.layers.Dense(8 * 8 * self.n, input_shape=embedding_shape)(noise)
         h0 = tf.keras.layers.Reshape((8, 8, self.n))(hid)
@@ -108,7 +104,7 @@ class CelebABEGAN:
         return model
 
     def encoder(self):
-        img = tf.keras.layers.Input(shape=self.img_shape, name="image", dtype="float32")
+        img = tf.keras.layers.Input(shape=self.img_shape, dtype="float32")
 
         hid = tf.keras.layers.Conv2D(self.n, kernel_size=3, padding='same')(img)
         hid = tf.keras.layers.Activation('elu')(hid)
@@ -154,27 +150,8 @@ class CelebABEGAN:
         m = self.autoencoder()
         return m
 
-    def build_combined(self):
-        z = tf.keras.layers.Input(shape=(self.z,), name="noise")
-        img = self.generator(z)
-        d_img = self.discriminator(img)
-        return tf.keras.models.Model(inputs=z, outputs=d_img)
-
-    def l1loss(self, model, x, y):
-        y_ = model(x)
-        return tf.reduce_mean(tf.abs(y_ - y))
-
-    def g_grad(self, inputs, targets):
-        with tf.GradientTape() as tape:
-            loss_value = self.l1loss(self.combined, inputs, targets)
-        return loss_value, tape.gradient(loss_value, self.generator.trainable_variables)
-
-    def d_grad(self, real_in, real_out, gen_in, gen_out):
-        with tf.GradientTape() as tape:
-            real_loss = self.l1loss(self.discriminator, real_in, real_out)
-            gen_loss = -self.k * self.l1loss(self.discriminator, gen_in, gen_out)
-            loss_value = real_loss + gen_loss
-        return real_loss, gen_loss, loss_value, tape.gradient(loss_value, self.discriminator.trainable_variables)
+    def l1loss(self, x, y):
+        return tf.reduce_mean(tf.abs(y - x))
 
     def train(self, x, epochs, k_lambda, gamma, batch_size=16, sample_interval=50, sample_path="samples/unknown",
               starting_epoch=0, save_interval=5000):
@@ -185,71 +162,84 @@ class CelebABEGAN:
         decay_every = 16000
         initial_lr = 0.0001
 
+        step = tf.Variable(0)
+
         lr = initial_lr * pow(0.5, epoch // decay_every)
         print(f"Initialized initial learning rate at {lr}")
         self.optimizer = tf.train.AdamOptimizer(lr)
 
-        while epoch < epochs:
-            # ---------------------
-            #  Calculate gradients on batch
-            # ---------------------
+        # set up train operations
+        # dataset
+        def datagen():
+            while True:
+                idx = np.random.randint(0, x.shape[0], batch_size)
+                imgs = x[idx]
+                yield imgs
 
-            # Select a random batch of images
-            idx = np.random.randint(0, x.shape[0], batch_size)
-            real = x[idx]
+        dataset = tf.data.Dataset.from_generator(datagen, tf.float32, tf.TensorShape(
+            (batch_size, self.img_rows, self.img_cols, self.channels))).repeat()
 
-            # Generate a batch of new images
-            noise = np.random.uniform(-1., 1., (batch_size, self.z))
-            noise = noise.astype("float32")
-            fake = self.generator(noise)
+        # generator
+        noise = tf.random_uniform((x.shape[0], batch_size), -1.0, 1.0)
+        fake = self.generator(noise)
+        g_loss = self.l1loss(fake, self.discriminator(fake))
 
-            # Train the generator on generated images?
-            g_loss, g_grads = self.g_grad(noise, fake)
+        # discriminator
+        real = dataset.get_next()
+        d_loss_real = self.l1loss(real, self.discriminator(real))
+        d_loss_gen = g_loss
+        d_loss = d_loss_real - self.k * d_loss_gen
 
-            # train
-            d_loss_real, d_loss_gen, d_loss, d_grads = self.d_grad(real, real, fake, fake)
+        # training
+        g_opt = self.optimizer.minimize(g_loss, var_list=self.generator.trainable_variables)
+        d_opt = self.optimizer.minimize(d_loss, global_step=step, var_list=self.discriminator.trainable_variables)
 
-            # ---------------------
-            #  Apply Gradients
-            # ---------------------
-            self.optimizer.apply_gradients(zip(g_grads, self.generator.trainable_variables))
-            self.optimizer.apply_gradients(zip(d_grads, self.discriminator.trainable_variables))
+        # updating
+        balance = gamma * d_loss_real - g_loss
+        measure = d_loss_real + tf.abs(balance)
+        with tf.control_dependencies([g_opt, d_opt]):
+            k_update = tf.assign(self.k, tf.clip_by_value(self.k + k_lambda * balance, 0, 1))
 
-            # ---------------------
-            #  Update k
-            # ---------------------
-            # maintains the diversity ratio of the network - balances goals of
-            # autoencoding and discriminating images
-            self.k = self.k + k_lambda * (gamma * d_loss_real - g_loss)
-            self.k = min(max(self.k, 0), 1)
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            while epoch < epochs:
+                result = sess.run({
+                    "k_update": k_update,
+                    "m": measure,
+                    "g_loss": g_loss,
+                    "d_loss_real": d_loss_real,
+                    "d_loss_fake": d_loss_gen,
+                    "d_loss": d_loss,
+                    "k": self.k
+                })
 
-            # ---------------------
-            #  LR Decay
-            # ---------------------
-            if epoch % decay_every == 0:
-                lr = initial_lr * pow(0.5, epoch // decay_every)
-                print(f"Decaying learning rate to {lr}")
+                # ---------------------
+                #  LR Decay
+                # ---------------------
+                if epoch % decay_every == 0:
+                    lr = initial_lr * pow(0.5, epoch // decay_every)
+                    print(f"Decaying learning rate to {lr}")
+                    self.optimizer = tf.train.AdamOptimizer(lr)
 
-            # ---------------------
-            #  Status report
-            # ---------------------
-            # calculate convergence factor
-            m_global = d_loss + np.abs(gamma * d_loss_real - g_loss)
-            # Plot the progress
-            print("%d [M: %f] [D loss: %f = %f + %f] [G loss: %f] [K: %f]" % (
-                epoch, m_global, d_loss.numpy(), d_loss_real.numpy(), d_loss_gen.numpy(), g_loss.numpy(),
-                self.k))
+                # ---------------------
+                #  Status report
+                # ---------------------
+                # calculate convergence factor
+                # Plot the progress
+                print("%d [M: %f] [D loss: %f = %f + %f] [G loss: %f] [K: %f]" % (
+                    epoch, result['m'], result['d_loss'], result['d_loss_real'], result['d_loss_fake'],
+                    result['g_loss'], result['k']))
 
-            # If at save interval => save generated image samples
-            if epoch % sample_interval == 0:
-                self.save_sample(epoch, sample_path, x)
+                # If at save interval => save generated image samples
+                if epoch % sample_interval == 0:
+                    self.save_sample(epoch, sample_path, x, sess)
 
-            # save model
-            if epoch % save_interval == 0:
-                self.save(f"temp/{epoch}")
-            epoch += 1
+                # save model
+                if epoch % save_interval == 0:
+                    self.save(f"temp/{epoch}")
+                epoch += 1
 
-    def save_sample(self, epoch, path, x):
+    def save_sample(self, epoch, path, x, sess):
         r, c = 5, 5
 
         idx = np.random.randint(0, x.shape[0], r * c)
@@ -260,7 +250,7 @@ class CelebABEGAN:
         noise = noise.astype("float32")
         gen_imgs = self.generator(noise)
 
-        combined_images = self.combined(noise)
+        combined_images = self.discriminator(gen_imgs)
 
         def save(imgs, fpath):
             # Rescale images 0 - 1
@@ -278,29 +268,12 @@ class CelebABEGAN:
             fig.savefig(fpath, dpi=100)
             plt.close()
 
-        save(gen_imgs, f"{path}/g-{epoch}.png")
-        save(real_imgs, f"{path}/d-{epoch}.png")
-        save(combined_images, f"{path}/c-{epoch}.png")
-
-    def tests(self):
-        import copy
-        self.discriminator.trainable = False
-        print(self.combined.trainable_variables == self.generator.trainable_variables)
-
-        # Generate a batch of new images
-        noise = np.random.uniform(-1., 1., (16, self.z))
-        noise = noise.astype("float32")
-        fake = self.generator(noise)
-        old_fake = copy.deepcopy(fake)
-
-        # train
-        d_loss, d_grads = self.g_grad(fake, fake)
-
-        print(fake == old_fake)
+        save(sess.run(gen_imgs), f"{path}/g-{epoch}.png")
+        save(sess.run(real_imgs), f"{path}/d-{epoch}.png")
+        save(sess.run(combined_images), f"{path}/c-{epoch}.png")
 
 
 if __name__ == '__main__':
-    tf.enable_eager_execution()
     gan = CelebABEGAN(img_rows=32, img_cols=32, img_channels=3, h=64, z=64, n=64)
     # gan.tests()
 

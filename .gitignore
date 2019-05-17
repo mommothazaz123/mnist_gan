@@ -119,3 +119,6 @@ models/
 temp/
 datasets/*/raw
 datasets/*/img*
+datasets/*/Trash
+datasets/*/template
+datasets/*/*.json
